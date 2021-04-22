@@ -81,12 +81,12 @@
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-server</artifactId>
-      <scope>provided</scope>
+      <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-servlet</artifactId>
-      <scope>provided</scope>
+      <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
@@ -116,7 +116,7 @@
     <dependency>
        <groupId>io.dropwizard.metrics</groupId>
        <artifactId>metrics-core</artifactId>
-       <scope>provided</scope>
+   <!--    <scope>provided</scope>-->
     </dependency>
     <dependency>
       <groupId>log4j</groupId>
@@ -170,7 +170,7 @@
     <dependency>
       <groupId>org.xerial.snappy</groupId>
       <artifactId>snappy-java</artifactId>
-      <scope>provided</scope>
+      <!--<scope>provided</scope>-->
     </dependency>
       <dependency>
           <groupId>commons-io</groupId>
