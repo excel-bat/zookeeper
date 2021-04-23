@@ -44,7 +44,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- *
+ * zookeeper 服务器集群启动的主入口类
  * <h2>Configuration file</h2>
  *
  * When the main() method of this class is used to start the program, the first
@@ -125,14 +125,15 @@ public class QuorumPeerMain {
             config.parse(args[0]);
         }
 
-        // Start and schedule the the purge task
+        // 开始和调度清理任务
         DatadirCleanupManager purgeMgr = new DatadirCleanupManager(
             config.getDataDir(),
             config.getDataLogDir(),
             config.getSnapRetainCount(),
             config.getPurgeInterval());
         purgeMgr.start();
-
+        
+        //根据参数判断是否走单机模式
         if (args.length == 1 && config.isDistributed()) {
             runFromConfig(config);
         } else {

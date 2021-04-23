@@ -55,7 +55,7 @@ public class DataNode implements Record {
     Long acl;
 
     /**
-     * the stat for this node that is persisted to disk.
+     * 这个节点持久化到磁盘的统计信息
      */
     public StatPersisted stat;
 

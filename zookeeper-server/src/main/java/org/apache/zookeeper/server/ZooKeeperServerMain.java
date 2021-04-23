@@ -41,7 +41,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This class starts and runs a standalone ZooKeeperServer.
+ * 启动 ZooKeeperServer 单机运行
  */
 @InterfaceAudience.Public
 public class ZooKeeperServerMain {
@@ -57,14 +57,14 @@ public class ZooKeeperServerMain {
     private MetricsProvider metricsProvider;
     private AdminServer adminServer;
 
-    /*
-     * Start up the ZooKeeper server.
-     *
-     * @param args the configfile or the port datadir [ticktime]
+    /**
+     *  启动参数为 配置文件 或 端口号 data目录 [ticktime]
+     *  这里启动参数使用 conf/zoo_sample.cfg 可启动起来
      */
     public static void main(String[] args) {
         ZooKeeperServerMain main = new ZooKeeperServerMain();
         try {
+            // 初始化单机服务
             main.initializeAndRun(args);
         } catch (IllegalArgumentException e) {
             LOG.error("Invalid arguments, exiting abnormally", e);
@@ -98,29 +98,33 @@ public class ZooKeeperServerMain {
 
     protected void initializeAndRun(String[] args) throws ConfigException, IOException, AdminServerException {
         try {
+            // 为 Log4j 注册 jmx
             ManagedUtil.registerLog4jMBeans();
         } catch (JMException e) {
             LOG.warn("Unable to register log4j JMX control", e);
         }
-
+        
         ServerConfig config = new ServerConfig();
         if (args.length == 1) {
+            // 此时指定的是配置文件
             config.parse(args[0]);
         } else {
+            // 此时指定的是 port datadir [ticktime]
             config.parse(args);
         }
-
+        // 准备启动服务
         runFromConfig(config);
     }
 
     /**
-     * Run from a ServerConfig.
+     * 解析好配置后，开始读取配置启动服务了，记住，这里是单机服务
      * @param config ServerConfig to use.
      * @throws IOException
      * @throws AdminServerException
      */
     public void runFromConfig(ServerConfig config) throws IOException, AdminServerException {
         LOG.info("Starting server");
+        // 日志和快照操作类
         FileTxnSnapLog txnLog = null;
         try {
             try {
@@ -132,10 +136,9 @@ public class ZooKeeperServerMain {
             }
             ServerMetrics.metricsProviderInitialized(metricsProvider);
             ProviderRegistry.initialize();
-            // Note that this thread isn't going to be doing anything else,
-            // so rather than spawning another thread, we will just call
-            // run() in this thread.
-            // create a file logger url from the command line args
+            // 实例化单机服务的 zk 服务器
+            // 该构造器将设置一个用于统计数据的 serverStats 对象
+            // 和一个用于监听 zk 服务是否异常的监听器
             txnLog = new FileTxnSnapLog(config.dataLogDir, config.dataDir);
             JvmPauseMonitor jvmPauseMonitor = null;
             if (config.jvmPauseMonitorToRun) {
@@ -143,10 +146,10 @@ public class ZooKeeperServerMain {
             }
             final ZooKeeperServer zkServer = new ZooKeeperServer(jvmPauseMonitor, txnLog, config.tickTime, config.minSessionTimeout, config.maxSessionTimeout, config.listenBacklog, null, config.initialConfig);
             txnLog.setServerStats(zkServer.serverStats());
-
-            // Registers shutdown handler which will be used to know the
-            // server error or shutdown state changes.
+    
+            // shutdownLatch 是一个计数器，当发生错误或者关闭事件，则其值减一，当 shutdownLatch 为零时，服务将关闭
             final CountDownLatch shutdownLatch = new CountDownLatch(1);
+            // 注册 zk 的异常关闭处理器
             zkServer.registerServerShutdownHandler(new ZooKeeperServerShutdownHandler(shutdownLatch));
 
             // Start Admin server
@@ -156,8 +159,14 @@ public class ZooKeeperServerMain {
 
             boolean needStartZKServer = true;
             if (config.getClientPortAddress() != null) {
+                // serverCnxnFactory 用于创建和客户端的连接
+                // createFactory() 是为了检查是否有指定其他实现类
+                // ServerCnxnFactory 默认采用的实现类是 NIOServerCnxnFactory
                 cnxnFactory = ServerCnxnFactory.createFactory();
+                // 传入该服务器的地址和最大允许客户端的连接数，
+                // 默认使用的
                 cnxnFactory.configure(config.getClientPortAddress(), config.getMaxClientCnxns(), config.getClientPortListenBacklog(), false);
+                // 启动守护进程 serverCnxnFactory
                 cnxnFactory.startup(zkServer);
                 // zkServer has been started. So we don't need to start it again in secureCnxnFactory.
                 needStartZKServer = false;
@@ -178,25 +187,28 @@ public class ZooKeeperServerMain {
             containerManager.start();
             ZKAuditProvider.addZKStartStopAuditLog();
 
-            // Watch status of ZooKeeper server. It will do a graceful shutdown
-            // if the server is not running or hits an internal error.
+        
+            // 监听zookeeper server，当shutdownLatch为零时执行后面的代码（实现优雅停服）
             shutdownLatch.await();
-
+            // 关闭服务
             shutdown();
 
             if (cnxnFactory != null) {
+                // 等待 cnxnFactory 执行完毕，其处理关闭和客户端的连接
                 cnxnFactory.join();
             }
             if (secureCnxnFactory != null) {
                 secureCnxnFactory.join();
             }
             if (zkServer.canShutdown()) {
+                // 如果服务器状态处于 RUNNING 或者 ERROR 时即允许关闭；这是因为服务器可能已经处于关闭状态就不必再关闭了
                 zkServer.shutdown(true);
             }
         } catch (InterruptedException e) {
-            // warn, but generally this is ok
+            // 意外的线程中断，但一般情况下这是允许发生的
             LOG.warn("Server interrupted", e);
         } finally {
+            // 快照和日志做关闭处理
             if (txnLog != null) {
                 txnLog.close();
             }

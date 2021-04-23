@@ -88,6 +88,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * 这个类管理选举协议
  * This class manages the quorum protocol. There are three states this server
  * can be in:
  * <ol>
@@ -133,6 +134,8 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
     QuorumAuthServer authServer;
     QuorumAuthLearner authLearner;
 
+    
+    
     /**
      * ZKDatabase is a top level member of quorumpeer
      * which will be used in all the zookeeperservers
@@ -1445,14 +1448,17 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
         try {
             /*
              * Main loop
+             * 判断当前线程是否退出，如果不退出，则不停的执行选主的流程
              */
             while (running) {
+                
                 if (unavailableStartTime == 0) {
                     unavailableStartTime = Time.currentElapsedTime();
                 }
-
+                //获取当前节点的状态，跟当前节点的状态执行不同的业务逻辑
                 switch (getPeerState()) {
                 case LOOKING:
+                    //当前节点未能确认角色，或则集群中未选出leader。触发投票
                     LOG.info("LOOKING");
                     ServerMetrics.getMetrics().LOOKING_COUNT.add(1);
 
@@ -1468,21 +1474,19 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                         // Thread is used here because otherwise it would require
                         // changes in each of election strategy classes which is
                         // unnecessary code coupling.
-                        Thread roZkMgr = new Thread() {
-                            public void run() {
-                                try {
-                                    // lower-bound grace period to 2 secs
-                                    sleep(Math.max(2000, tickTime));
-                                    if (ServerState.LOOKING.equals(getPeerState())) {
-                                        roZk.startup();
-                                    }
-                                } catch (InterruptedException e) {
-                                    LOG.info("Interrupted while attempting to start ReadOnlyZooKeeperServer, not started");
-                                } catch (Exception e) {
-                                    LOG.error("FAILED to start ReadOnlyZooKeeperServer", e);
+                        Thread roZkMgr = new Thread(() -> {
+                            try {
+                                // lower-bound grace period to 2 secs
+                                sleep(Math.max(2000, tickTime));
+                                if (ServerState.LOOKING.equals(getPeerState())) {
+                                    roZk.startup();
                                 }
+                            } catch (InterruptedException e) {
+                                LOG.info("Interrupted while attempting to start ReadOnlyZooKeeperServer, not started");
+                            } catch (Exception e) {
+                                LOG.error("FAILED to start ReadOnlyZooKeeperServer", e);
                             }
-                        };
+                        });
                         try {
                             roZkMgr.start();
                             reconfigFlagClear();
@@ -1490,6 +1494,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                                 shuttingDownLE = false;
                                 startLeaderElection();
                             }
+                            //发起投票事件
                             setCurrentVote(makeLEStrategy().lookForLeader());
                         } catch (Exception e) {
                             LOG.warn("Unexpected exception", e);
@@ -1515,6 +1520,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                     }
                     break;
                 case OBSERVING:
+                    //当前节点是OBSERVING，不参与投票、选主
                     try {
                         LOG.info("OBSERVING");
                         setObserver(makeObserver(logFactory));
@@ -1523,6 +1529,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                         LOG.warn("Unexpected exception", e);
                     } finally {
                         observer.shutdown();
+                        //leader 退出 从新选举
                         setObserver(null);
                         updateServerState();
 
@@ -1534,6 +1541,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                     }
                     break;
                 case FOLLOWING:
+                    //当前节点为follower
                     try {
                         LOG.info("FOLLOWING");
                         setFollower(makeFollower(logFactory));
@@ -1550,7 +1558,9 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                     LOG.info("LEADING");
                     try {
                         setLeader(makeLeader(logFactory));
+                        //当leader选举结束之后，如果发现当前节点是leader节点，则监听2888端口，接受集群的其他节点的连接，同步数据
                         leader.lead();
+                        //leader 退出 从新选举
                         setLeader(null);
                     } catch (Exception e) {
                         LOG.warn("Unexpected exception", e);
